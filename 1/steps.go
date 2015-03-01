@@ -18,6 +18,16 @@ const stepCnt = 16
 // Steps holds stepCnt bools (one step is a bool) and can print them as ascii
 type Steps [stepCnt]bool
 
+func newSteps(in [stepCnt]byte) Steps {
+	var out Steps
+	for i := 0; i < stepCnt; i++ {
+		if in[i] == 1 {
+			out[i] = true
+		}
+	}
+	return out
+}
+
 // String implements stringer
 func (s Steps) String() string {
 	var o string

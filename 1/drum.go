@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 )
 
@@ -37,29 +36,33 @@ type header struct {
 
 func decode(in io.Reader) (*Pattern, error) {
 	var p Pattern
+
+	// read header bytes
 	var h header
 	if err := binary.Read(in, binary.LittleEndian, &h); err != nil {
 		return nil, err
 	}
 
+	// check filetype
 	if bytes.Compare(h.Ftype[:], ftype[:]) != 0 {
 		return nil, ErrIllegalFtype
 	}
+
+	// take HW Version from header
 	p.Version = string(h.Version[:])
 
-	// how many bytes in the header after filetype header
-	n := binary.BigEndian.Uint16(h.FileLen[6:])
+	// TODO: find temp
+	p.Tempo = 120
 
+	// how many bytes in the header after filetype header
+	n := int(binary.BigEndian.Uint16(h.FileLen[6:]))
 	n -= 50 // sizeof(header)
 
-	// fmt.Println(hex.Dump(h.FileLen[6:]))
-	fmt.Println("Len:", n)
-
+	// iterate until all bytes are consumed
 	for n > 0 {
 		var t Track
 
-		fmt.Println("bytes left:", n)
-
+		// read trackID from first byte after header
 		var trackID int8
 		if err := binary.Read(in, binary.BigEndian, &trackID); err != nil {
 			return nil, err
@@ -81,17 +84,13 @@ func decode(in io.Reader) (*Pattern, error) {
 		}
 		n--
 
-		// fmt.Println("nameLen", nameLen)
-
-		// read n bytes of track name
+		// read nameLen bytes of track name
 		var nameBuf bytes.Buffer
 		if _, err := io.CopyN(&nameBuf, in, int64(nameLen)); err != nil {
 			return nil, err
 		}
-		n -= uint16(nameLen)
-
+		n -= int(nameLen)
 		t.Name = nameBuf.String()
-		// fmt.Println("name:", t.Name)
 
 		// read stepCnt bytes of steps
 		var steps [stepCnt]byte
@@ -103,11 +102,9 @@ func decode(in io.Reader) (*Pattern, error) {
 			return nil, ErrShortStepRead
 		}
 		n -= stepCnt
-
-		t.Steps = newSteps(steps)
+		t.Steps = Steps(steps)
 
 		p.Tracks = append(p.Tracks, t)
 	}
-	fmt.Println(p)
 	return &p, nil
 }

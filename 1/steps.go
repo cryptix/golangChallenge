@@ -10,23 +10,13 @@ type Track struct {
 }
 
 func (t Track) String() string {
-	return fmt.Sprintf("(%d) %s %s\n", t.ID, t.Name, t.Steps)
+	return fmt.Sprintf("(%d) %s\t%s\n", t.ID, t.Name, t.Steps)
 }
 
 const stepCnt = 16
 
 // Steps holds stepCnt bools (one step is a bool) and can print them as ascii
-type Steps [stepCnt]bool
-
-func newSteps(in [stepCnt]byte) Steps {
-	var out Steps
-	for i := 0; i < stepCnt; i++ {
-		if in[i] == 1 {
-			out[i] = true
-		}
-	}
-	return out
-}
+type Steps [stepCnt]byte
 
 // String implements stringer
 func (s Steps) String() string {
@@ -35,7 +25,7 @@ func (s Steps) String() string {
 		if i%4 == 0 {
 			o += "|"
 		}
-		if s[i] {
+		if s[i] == 1 {
 			o += "x"
 		} else {
 			o += "-"

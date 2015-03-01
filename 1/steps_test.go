@@ -8,7 +8,7 @@ func TestStepPrint(t *testing.T) {
 		output string
 	}{
 		{
-			Steps{true, false, false, false, true, false, false, false, true, false, false, false, true, false, false, false},
+			Steps{1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0},
 			"|x---|x---|x---|x---|",
 		},
 	}

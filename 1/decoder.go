@@ -35,8 +35,8 @@ func (p Pattern) String() string {
 	s := fmt.Sprintln("Saved with HW Version:", p.Version)
 	// s += fmt.Sprintln("Len:", p.Len)
 	s += fmt.Sprintln("Tempo:", p.Tempo)
-	for i, t := range p.Tracks {
-		s += fmt.Sprintf("(%d) %s\n", i, t)
+	for _, t := range p.Tracks {
+		s += fmt.Sprint(t)
 	}
 	return s
 }

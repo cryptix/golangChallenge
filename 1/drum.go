@@ -15,10 +15,6 @@ var (
 	ErrShortStepRead = errors.New("Could not read enough steps")
 )
 
-var (
-	ftype = [6]byte{'S', 'P', 'L', 'I', 'C', 'E'}
-)
-
 type header struct {
 	// first 6 bytes should be "SPLICE"
 	Ftype [6]byte
@@ -44,12 +40,16 @@ func decode(in io.Reader) (*Pattern, error) {
 	}
 
 	// check filetype
-	if bytes.Compare(h.Ftype[:], ftype[:]) != 0 {
+	if bytes.Compare(h.Ftype[:], []byte{'S', 'P', 'L', 'I', 'C', 'E'}) != 0 {
 		return nil, ErrIllegalFtype
 	}
 
 	// take HW Version from header
 	p.Version = string(h.Version[:])
+	//split of trailing zeros
+	if i := bytes.IndexByte(h.Version[:], 0); i != -1 {
+		p.Version = p.Version[:i]
+	}
 
 	// TODO: find temp
 	p.Tempo = 120
@@ -63,7 +63,7 @@ func decode(in io.Reader) (*Pattern, error) {
 		var t Track
 
 		// read trackID from first byte after header
-		var trackID int8
+		var trackID uint8
 		if err := binary.Read(in, binary.BigEndian, &trackID); err != nil {
 			return nil, err
 		}

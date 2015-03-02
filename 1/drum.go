@@ -30,6 +30,7 @@ type header struct {
 	_ [25]byte
 }
 
+// decodes the data from the passed Reader into a Pattern with multiple tracks
 func decode(in io.Reader) (*Pattern, error) {
 	var p Pattern
 

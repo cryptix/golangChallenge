@@ -9,12 +9,12 @@ import (
 // and returns a pointer to a parsed pattern which is the entry point to the
 // rest of the data.
 func DecodeFile(path string) (*Pattern, error) {
-	var p *Pattern
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 
+	var p *Pattern
 	if p, err = decode(f); err != nil {
 		return nil, err
 	}

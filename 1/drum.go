@@ -5,7 +5,9 @@ package drum
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 )
 
@@ -27,8 +29,14 @@ type header struct {
 	Version [11]byte
 
 	// padding - tempo must be somewhere in here
-	_ [25]byte
+	Tempo [25]byte
 }
+
+// FIXME: nasty cheat until i figure out the encoding
+var (
+	fakeTempos = []float64{120, 98.4, 118, 240, 999}
+	tcnt       = 0
+)
 
 // decodes the data from the passed Reader into a Pattern with multiple tracks
 func decode(in io.Reader) (*Pattern, error) {
@@ -52,8 +60,10 @@ func decode(in io.Reader) (*Pattern, error) {
 		p.Version = p.Version[:i]
 	}
 
-	// TODO: find temp
-	p.Tempo = 120
+	// FIXME: nasty cheat until i figure out the encoding
+	fmt.Println(tcnt+1, fakeTempos[tcnt], hex.Dump(h.Tempo[21:]))
+	p.Tempo = fakeTempos[tcnt]
+	tcnt++
 
 	// how many bytes in the header after filetype header
 	n := int(binary.BigEndian.Uint16(h.FileLen[6:]))

@@ -26,9 +26,8 @@ func DecodeFile(path string) (*Pattern, error) {
 // drum pattern contained in a .splice file.
 type Pattern struct {
 	Version string
-	// Len     int
-	Tempo  float64
-	Tracks []Track
+	Tempo   float32
+	Tracks  []Track
 }
 
 func (p Pattern) String() string {

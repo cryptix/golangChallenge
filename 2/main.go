@@ -1,22 +1,133 @@
 package main
 
 import (
+	"encoding/binary"
+	"encoding/hex"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"os"
+
+	"golang.org/x/crypto/nacl/box"
 )
 
 // NewSecureReader instantiates a new SecureReader
 func NewSecureReader(r io.Reader, priv, pub *[32]byte) io.Reader {
-	return r
+	pr, pw := io.Pipe()
+	var non uint32 = 420
+	go func() {
+		for {
+			// read next ciphered message
+			ciph := make([]byte, 32*1024)
+			n, err := r.Read(ciph)
+			if err != nil {
+				if err == io.EOF {
+					pr.Close()
+					return
+				}
+				log.Println("secReader read(ciph) failed", err)
+				if err2 := pr.CloseWithError(err); err2 != nil {
+					log.Println("CloseWithError failed", err2)
+				}
+				return
+			}
+			ciph = ciph[:n]
+			log.Println("SecR Read:", n)
+			fmt.Print(hex.Dump(ciph))
+
+			var nonceBytes [24]byte
+			binary.BigEndian.PutUint32(nonceBytes[:], non)
+
+			log.Println("nonce:", non)
+			fmt.Print(hex.Dump(nonceBytes[:]))
+			non++
+
+			// decrypt message
+			outBuf, ok := box.Open([]byte{}, ciph, &nonceBytes, pub, priv)
+			if !ok {
+				log.Println("Open not ok")
+				if err2 := pw.CloseWithError(errors.New("open failed")); err2 != nil {
+					log.Println("CloseWithError failed", err2)
+				}
+				return
+			}
+
+			log.Println("Opened:")
+			fmt.Print(hex.Dump(outBuf))
+
+			n, err = pw.Write(outBuf)
+			if err != nil {
+				log.Println("io.Write(w, outBuf) failed", err)
+				if err2 := pr.CloseWithError(err); err2 != nil {
+					log.Println("CloseWithError failed", err2)
+				}
+				return
+			}
+
+			if n < len(outBuf) {
+				log.Println("write fell short")
+				if err2 := pw.CloseWithError(errors.New("short write")); err2 != nil {
+					log.Println("CloseWithError failed", err2)
+				}
+				return
+			}
+		}
+	}()
+	return pr
 }
 
 // NewSecureWriter instantiates a new SecureWriter
 func NewSecureWriter(w io.Writer, priv, pub *[32]byte) io.Writer {
-	return w
+	pr, pw := io.Pipe()
+	var non uint32 = 420
+	go func() {
+		for {
+			msg := make([]byte, 1024)
+			n, err := pr.Read(msg)
+			if err != nil {
+				log.Println("pr.Read(msg) failed", err)
+				if err2 := pw.CloseWithError(err); err2 != nil {
+					log.Println("CloseWithError failed", err2)
+				}
+				return
+			}
+			msg = msg[:n]
+			log.Println("SecW Write:", n)
+			fmt.Print(hex.Dump(msg))
+
+			var nonceBytes [24]byte
+			binary.BigEndian.PutUint32(nonceBytes[:], non)
+			log.Println("nonce:", non)
+			fmt.Print(hex.Dump(nonceBytes[:]))
+			non++
+
+			buf := box.Seal([]byte{}, msg, &nonceBytes, pub, priv)
+
+			log.Println("sealed:")
+			fmt.Print(hex.Dump(buf))
+
+			n, err = w.Write(buf)
+			if err != nil {
+				log.Println("w.Write(buf) failed", err)
+				if err2 := pw.CloseWithError(err); err2 != nil {
+					log.Println("CloseWithError failed", err2)
+				}
+				return
+			}
+
+			if n < len(buf) {
+				log.Println("write fell short")
+				if err2 := pw.CloseWithError(errors.New("short write")); err2 != nil {
+					log.Println("CloseWithError failed", err2)
+				}
+				return
+			}
+		}
+	}()
+	return pw
 }
 
 // Dial generates a private/public key pair,

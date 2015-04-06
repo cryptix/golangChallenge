@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -43,15 +42,9 @@ func NewSecureReader(r io.Reader, priv, pub *[32]byte) io.Reader {
 			// slice of the unused rest of the buffer
 			msg = msg[:n]
 
-			log.Println("[DBG] secReader cipher msg:", n)
-			fmt.Print(hex.Dump(msg))
-
 			// copy the nonce from the message
 			var nonce [24]byte
 			copy(nonce[:], msg[:24])
-
-			log.Println("[DBG] nonce:")
-			fmt.Print(hex.Dump(nonce[:]))
 
 			// cut of the nonce
 			msg = msg[24:]
@@ -65,9 +58,6 @@ func NewSecureReader(r io.Reader, priv, pub *[32]byte) io.Reader {
 				}
 				return
 			}
-
-			log.Println("[DBG] Opened:")
-			fmt.Print(hex.Dump(clearMsg))
 
 			// write decrypted message to our pipe
 			n, err = pw.Write(clearMsg)
@@ -115,9 +105,6 @@ func NewSecureWriter(w io.Writer, priv, pub *[32]byte) io.Writer {
 			// cut of the unused bytes
 			msg = msg[:n]
 
-			log.Println("[DBG] SecW Write:", n)
-			fmt.Print(hex.Dump(msg))
-
 			// read 24 bytes of random for our nonce
 			var nonce [24]byte
 			_, err = io.ReadFull(rand.Reader, nonce[:])
@@ -129,14 +116,8 @@ func NewSecureWriter(w io.Writer, priv, pub *[32]byte) io.Writer {
 				return
 			}
 
-			log.Println("[DBG] nonce:", len(nonce))
-			fmt.Print(hex.Dump(nonce[:]))
-
 			// encrypt and sign our message with the prepended nonce
 			buf := box.SealAfterPrecomputation(nonce[:], msg, &nonce, &shared)
-
-			log.Println("[DBG] sealed:", len(buf))
-			fmt.Print(hex.Dump(buf))
 
 			// send the sealed message with our passed writer
 			n, err = w.Write(buf)
@@ -165,7 +146,6 @@ func NewSecureWriter(w io.Writer, priv, pub *[32]byte) io.Writer {
 // connects to the server, perform the handshake
 // and return a reader/writer.
 func Dial(addr string) (io.ReadWriteCloser, error) {
-	log.Println("[DBG] Dialing", addr)
 	// open a tcp socket
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
@@ -179,20 +159,11 @@ func Dial(addr string) (io.ReadWriteCloser, error) {
 		return nil, err
 	}
 
-	log.Println("[DBG] got pub key")
-	fmt.Println(hex.Dump(theirPub[:]))
-
 	// generate us a new key
 	myPub, myPriv, err := box.GenerateKey(rand.Reader)
 	if err != nil {
 		return nil, err
 	}
-
-	log.Println("[DBG] generated privkey")
-	fmt.Println(hex.Dump(myPriv[:]))
-
-	log.Println("[DBG] generated pubkey")
-	fmt.Println(hex.Dump(myPub[:]))
 
 	// our public key is sent to the other party
 	_, err = io.Copy(conn, bytes.NewReader(myPub[:]))
@@ -200,16 +171,12 @@ func Dial(addr string) (io.ReadWriteCloser, error) {
 		return nil, err
 	}
 
-	log.Println("[DBG] pubkey sent")
-
 	// their public key is used to verify the signature of what we receive
 	secR := NewSecureReader(conn, myPriv, &theirPub)
 
 	// our private key is used to sign our messages
 	// their public key is used to encrypt the messages that we send
 	secW := NewSecureWriter(conn, myPriv, &theirPub)
-
-	log.Println("[DBG] conn wrapped")
 
 	return struct {
 		io.Reader
@@ -233,19 +200,11 @@ func Serve(l net.Listener) error {
 				log.Fatal(err)
 			}
 
-			log.Println("[DBG] generated privkey")
-			fmt.Println(hex.Dump(myPriv[:]))
-
-			log.Println("[DBG] generated pubkey")
-			fmt.Println(hex.Dump(myPub[:]))
-
 			// our public key is sent to the other party
 			_, err = io.Copy(c, bytes.NewReader(myPub[:]))
 			if err != nil {
 				log.Fatal(err)
 			}
-
-			log.Println("[DBG] pubkey sent")
 
 			// get their public key
 			var theirPub [32]byte
@@ -254,17 +213,12 @@ func Serve(l net.Listener) error {
 				log.Fatal(err)
 			}
 
-			log.Println("[DBG] got pub key")
-			fmt.Println(hex.Dump(theirPub[:]))
-
 			// their public key is used to verify the signature of what we receive
 			secR := NewSecureReader(c, myPriv, &theirPub)
 
 			// our private key is used to sign our messages
 			// their public key is used to encrypt the messages that we send
 			secW := NewSecureWriter(c, myPriv, &theirPub)
-
-			log.Println("[DBG] c wrapped")
 
 			_, err = io.Copy(secW, secR)
 			if err != nil {

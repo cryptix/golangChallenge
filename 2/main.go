@@ -10,6 +10,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"strings"
 
 	"golang.org/x/crypto/nacl/box"
 )
@@ -28,8 +29,11 @@ func NewSecureReader(r io.Reader, priv, pub *[32]byte) io.Reader {
 			msg := make([]byte, 32*1024)
 			n, err := io.ReadAtLeast(r, msg, 25)
 			if err != nil {
-				if err == io.EOF {
-					pw.Close()
+				// the closed conn check could be nicer but there is no way to access the abstracted TCPConn cleanly with the pipes involved
+				if err == io.EOF || strings.Contains(err.Error(), "use of closed network connection") {
+					if err = pw.Close(); err != nil {
+						log.Println("close pipe writer failed:", err)
+					}
 					return
 				}
 				log.Println("secReader read(msg) failed", err)

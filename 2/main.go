@@ -24,12 +24,6 @@ func NewSecureReader(r io.Reader, priv, pub *[32]byte) io.Reader {
 	box.Precompute(&shared, pub, priv)
 
 	go func(r io.Reader, pw *io.PipeWriter) {
-		var closePipe = func(err error) {
-			if err2 := pw.CloseWithError(err); err2 != nil {
-				log.Println("CloseWithError failed", err2)
-			}
-		}
-
 		for { // until an error occurs
 			// read next ciphered message from the passed reader
 			msg := make([]byte, 32*1024)
@@ -43,7 +37,7 @@ func NewSecureReader(r io.Reader, priv, pub *[32]byte) io.Reader {
 					return
 				}
 				log.Println("secReader read(msg) failed", err)
-				closePipe(err)
+				callWithErr(pw.CloseWithError, err)
 				return
 			}
 
@@ -61,7 +55,7 @@ func NewSecureReader(r io.Reader, priv, pub *[32]byte) io.Reader {
 			clearMsg, ok := box.OpenAfterPrecomputation([]byte{}, msg, &nonce, &shared)
 			if !ok {
 				log.Println("Open not ok")
-				closePipe(errors.New("open failed"))
+				callWithErr(pw.CloseWithError, errors.New("open failed"))
 				return
 			}
 
@@ -69,7 +63,7 @@ func NewSecureReader(r io.Reader, priv, pub *[32]byte) io.Reader {
 			_, err = io.Copy(pw, bytes.NewReader(clearMsg))
 			if err != nil {
 				log.Println("io.Write(w, clearMsg) failed", err)
-				closePipe(err)
+				callWithErr(pw.CloseWithError, err)
 				return
 			}
 		}
@@ -86,19 +80,13 @@ func NewSecureWriter(w io.Writer, priv, pub *[32]byte) io.Writer {
 	box.Precompute(&shared, pub, priv)
 
 	go func(w io.Writer, pr *io.PipeReader) {
-		var closePipe = func(err error) {
-			if err2 := pr.CloseWithError(err); err2 != nil {
-				log.Println("CloseWithError failed", err2)
-			}
-		}
-
 		for { // until an error occurs
 			// read the clear message from our pipe
 			msg := make([]byte, 1024)
 			n, err := pr.Read(msg)
 			if err != nil {
 				log.Println("pr.Read(msg) failed", err)
-				closePipe(err)
+				callWithErr(pr.CloseWithError, err)
 				return
 			}
 
@@ -110,7 +98,7 @@ func NewSecureWriter(w io.Writer, priv, pub *[32]byte) io.Writer {
 			_, err = io.ReadFull(rand.Reader, nonce[:])
 			if err != nil {
 				log.Println("rand.Read(nonce) failed", err)
-				closePipe(err)
+				callWithErr(pr.CloseWithError, err)
 				return
 			}
 
@@ -121,12 +109,18 @@ func NewSecureWriter(w io.Writer, priv, pub *[32]byte) io.Writer {
 			_, err = io.Copy(w, bytes.NewReader(buf))
 			if err != nil {
 				log.Println("w.Write(buf) failed", err)
-				closePipe(err)
+				callWithErr(pr.CloseWithError, err)
 				return
 			}
 		}
 	}(w, pr)
 	return pw
+}
+
+func callWithErr(fn func(error) error, err error) {
+	if err2 := fn(err); err2 != nil {
+		log.Println("CloseWithError failed", err2)
+	}
 }
 
 // Dial generates a private/public key pair,

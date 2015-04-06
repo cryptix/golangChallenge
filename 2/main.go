@@ -38,17 +38,14 @@ func NewSecureReader(r io.Reader, priv, pub *[32]byte) io.Reader {
 			// slice of the unused rest of the buffer
 			msg = msg[:n]
 
-			// TODO: debug print
-			log.Println("secReader cipher msg:", n)
+			log.Println("[DBG] secReader cipher msg:", n)
 			fmt.Print(hex.Dump(msg))
-
 
 			// copy the nonce from the message
 			var nonce [24]byte
 			copy(nonce[:], msg[:24])
 
-			// TODO: debug print
-			log.Println("nonce:")
+			log.Println("[DBG] nonce:")
 			fmt.Print(hex.Dump(nonce[:]))
 
 			// cut of the nonce
@@ -64,8 +61,7 @@ func NewSecureReader(r io.Reader, priv, pub *[32]byte) io.Reader {
 				return
 			}
 
-			// TODO: debug print
-			log.Println("Opened:")
+			log.Println("[DBG] Opened:")
 			fmt.Print(hex.Dump(clearMsg))
 
 			// write decrypted message to our pipe
@@ -111,8 +107,7 @@ func NewSecureWriter(w io.Writer, priv, pub *[32]byte) io.Writer {
 			// cut of the unused bytes
 			msg = msg[:n]
 
-			// TODO: debug print
-			log.Println("SecW Write:", n)
+			log.Println("[DBG] SecW Write:", n)
 			fmt.Print(hex.Dump(msg))
 
 			// read 24 bytes of random for our nonce
@@ -126,15 +121,13 @@ func NewSecureWriter(w io.Writer, priv, pub *[32]byte) io.Writer {
 				return
 			}
 
-			// TODO: debug print
-			log.Println("nonce:", len(nonce))
+			log.Println("[DBG] nonce:", len(nonce))
 			fmt.Print(hex.Dump(nonce[:]))
 
 			// encrypt and sign our message with the prepended nonce
 			buf := box.Seal(nonce[:], msg, &nonce, pub, priv)
 
-			// TODO: debug print
-			log.Println("sealed:", len(buf))
+			log.Println("[DBG] sealed:", len(buf))
 			fmt.Print(hex.Dump(buf))
 
 			// send the sealed message with our passed writer

@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bytes"
-	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -197,30 +195,24 @@ func BenchmarkSecWrite_32k(b *testing.B)  { benchSecWriteNbytes(b, 32*1024) }
 func BenchmarkSecWrite_100k(b *testing.B) { benchSecWriteNbytes(b, 100*1024) }
 
 func benchSecWriteNbytes(b *testing.B, n int64) {
-	var msg bytes.Buffer
-	_, err := io.CopyN(&msg, rand.Reader, n)
-	if err != nil {
-		b.Fatal(err)
-	}
-
 	priv, pub := &[32]byte{'p', 'r', 'i', 'v'}, &[32]byte{'p', 'u', 'b'}
-	var buf bytes.Buffer
 
-	msgBytes := msg.Len()
-	b.SetBytes(int64(msgBytes))
+	msg := make([]byte, n)
+	msgLen := len(msg)
 
+	b.SetBytes(int64(msgLen))
 	b.ReportAllocs()
 	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
-		secureW := NewSecureWriter(&buf, priv, pub)
-		n, err := io.WriteString(secureW, msg.String())
+		secureW := NewSecureWriter(ioutil.Discard, priv, pub)
+		n, err := secureW.Write(msg)
 		if err != nil {
-			b.Log("wat")
 			b.Fatal(err)
 		}
 
-		if n != msgBytes {
-			b.Fatalf("didnt writer all bytes. got %d wanted %d", n, msgBytes)
+		if n != msgLen {
+			b.Fatalf("didnt writer all bytes. got %d wanted %d", n, msgLen)
 		}
 	}
 }

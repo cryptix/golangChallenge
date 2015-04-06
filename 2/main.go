@@ -22,7 +22,7 @@ func NewSecureReader(r io.Reader, priv, pub *[32]byte) io.Reader {
 		for { // until an error occurs
 			// read next ciphered message from the passed reader
 			msg := make([]byte, 32*1024)
-			n, err := r.Read(msg)
+			n, err := io.ReadAtLeast(r, msg, 25)
 			if err != nil {
 				if err == io.EOF {
 					pw.Close()
@@ -42,14 +42,6 @@ func NewSecureReader(r io.Reader, priv, pub *[32]byte) io.Reader {
 			log.Println("secReader cipher msg:", n)
 			fmt.Print(hex.Dump(msg))
 
-			// check that we got at least the nonce and one byte
-			if n < 25 {
-				log.Println("secReader len(msg) < 25", err)
-				if err2 := pw.CloseWithError(errors.New("cipher text to short")); err2 != nil {
-					log.Println("CloseWithError failed", err2)
-				}
-				return
-			}
 
 			// copy the nonce from the message
 			var nonce [24]byte
@@ -125,19 +117,10 @@ func NewSecureWriter(w io.Writer, priv, pub *[32]byte) io.Writer {
 
 			// read 24 bytes of random for our nonce
 			var nonce [24]byte
-			n, err = rand.Read(nonce[:])
+			_, err = io.ReadFull(rand.Reader, nonce[:])
 			if err != nil {
 				log.Println("rand.Read(nonce) failed", err)
 				if err2 := pr.CloseWithError(err); err2 != nil {
-					log.Println("CloseWithError failed", err2)
-				}
-				return
-			}
-
-			// make sure we got a full nonce
-			if n < 24 {
-				log.Println("nonce read fell short")
-				if err2 := pr.CloseWithError(errors.New("short  nonce read")); err2 != nil {
 					log.Println("CloseWithError failed", err2)
 				}
 				return

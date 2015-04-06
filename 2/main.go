@@ -59,19 +59,11 @@ func NewSecureReader(r io.Reader, priv, pub *[32]byte) io.Reader {
 				return
 			}
 
-			// write decrypted message to our pipe
-			n, err = pw.Write(clearMsg)
+			// copy the decrypted message to our pipe
+			_, err = io.Copy(pw, bytes.NewReader(clearMsg))
 			if err != nil {
 				log.Println("io.Write(w, clearMsg) failed", err)
 				if err2 := pw.CloseWithError(err); err2 != nil {
-					log.Println("CloseWithError failed", err2)
-				}
-				return
-			}
-
-			if n < len(clearMsg) {
-				log.Println("write fell short")
-				if err2 := pw.CloseWithError(errors.New("short write")); err2 != nil {
 					log.Println("CloseWithError failed", err2)
 				}
 				return
@@ -119,20 +111,11 @@ func NewSecureWriter(w io.Writer, priv, pub *[32]byte) io.Writer {
 			// encrypt and sign our message with the prepended nonce
 			buf := box.SealAfterPrecomputation(nonce[:], msg, &nonce, &shared)
 
-			// send the sealed message with our passed writer
-			n, err = w.Write(buf)
+			// copy the sealed message with our passed writer
+			_, err = io.Copy(w, bytes.NewReader(buf))
 			if err != nil {
 				log.Println("w.Write(buf) failed", err)
 				if err2 := pr.CloseWithError(err); err2 != nil {
-					log.Println("CloseWithError failed", err2)
-				}
-				return
-			}
-
-			// we didn't write everything..!
-			if n < len(buf) {
-				log.Println("failed writing buf to w")
-				if err2 := pr.CloseWithError(errors.New("short write")); err2 != nil {
 					log.Println("CloseWithError failed", err2)
 				}
 				return

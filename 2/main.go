@@ -227,7 +227,11 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		defer l.Close()
+		defer func() {
+			if err := l.Close(); err != nil {
+				log.Fatal(err)
+			}
+		}()
 		log.Fatal(Serve(l))
 	}
 

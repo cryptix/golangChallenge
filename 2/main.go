@@ -16,42 +16,54 @@ import (
 
 // NewSecureReader instantiates a new SecureReader
 func NewSecureReader(r io.Reader, priv, pub *[32]byte) io.Reader {
+	// use a pipe to write the deciphered messages to our returned reader
 	pr, pw := io.Pipe()
-	go func() {
-		for {
-			// read next ciphered message
-			ciph := make([]byte, 32*1024)
-			n, err := r.Read(ciph)
+	go func(r io.Reader, pw *io.PipeWriter) {
+		for { // until an error occurs
+			// read next ciphered message from the passed reader
+			msg := make([]byte, 32*1024)
+			n, err := r.Read(msg)
 			if err != nil {
 				if err == io.EOF {
-					pr.Close()
+					pw.Close()
 					return
 				}
-				log.Println("secReader read(ciph) failed", err)
-				if err2 := pr.CloseWithError(err); err2 != nil {
+				log.Println("secReader read(msg) failed", err)
+				if err2 := pw.CloseWithError(err); err2 != nil {
 					log.Println("CloseWithError failed", err2)
 				}
 				return
 			}
-			ciph = ciph[:n]
+
+			// slice of the unused rest of the buffer
+			msg = msg[:n]
+
+			// TODO: debug print
 			log.Println("secReader cipher msg:", n)
-			fmt.Print(hex.Dump(ciph))
+			fmt.Print(hex.Dump(msg))
 
-			if n < 24 {
-				log.Println("secReader len(ciph) < 24", err)
-				if err2 := pr.CloseWithError(errors.New("cipher text to short")); err2 != nil {
+			// check that we got at least the nonce and one byte
+			if n < 25 {
+				log.Println("secReader len(msg) < 25", err)
+				if err2 := pw.CloseWithError(errors.New("cipher text to short")); err2 != nil {
 					log.Println("CloseWithError failed", err2)
 				}
 				return
 			}
 
-			var nonceBytes [24]byte
-			copy(nonceBytes[:], ciph[:24])
+			// copy the nonce from the message
+			var nonce [24]byte
+			copy(nonce[:], msg[:24])
+
+			// TODO: debug print
 			log.Println("nonce:")
-			fmt.Print(hex.Dump(nonceBytes[:]))
+			fmt.Print(hex.Dump(nonce[:]))
+
+			// cut of the nonce
+			msg = msg[24:]
 
 			// decrypt message
-			outBuf, ok := box.Open([]byte{}, ciph[24:], &nonceBytes, pub, priv)
+			clearMsg, ok := box.Open([]byte{}, msg, &nonce, pub, priv)
 			if !ok {
 				log.Println("Open not ok")
 				if err2 := pw.CloseWithError(errors.New("open failed")); err2 != nil {
@@ -60,90 +72,108 @@ func NewSecureReader(r io.Reader, priv, pub *[32]byte) io.Reader {
 				return
 			}
 
+			// TODO: debug print
 			log.Println("Opened:")
-			fmt.Print(hex.Dump(outBuf))
+			fmt.Print(hex.Dump(clearMsg))
 
-			n, err = pw.Write(outBuf)
+			// write decrypted message to our pipe
+			n, err = pw.Write(clearMsg)
 			if err != nil {
-				log.Println("io.Write(w, outBuf) failed", err)
+				log.Println("io.Write(w, clearMsg) failed", err)
+				if err2 := pw.CloseWithError(err); err2 != nil {
+					log.Println("CloseWithError failed", err2)
+				}
+				return
+			}
+
+			if n < len(clearMsg) {
+				log.Println("write fell short")
+				if err2 := pw.CloseWithError(errors.New("short write")); err2 != nil {
+					log.Println("CloseWithError failed", err2)
+				}
+				return
+			}
+		}
+	}(r, pw)
+	return pr
+}
+
+// NewSecureWriter instantiates a new SecureWriter
+func NewSecureWriter(w io.Writer, priv, pub *[32]byte) io.Writer {
+	// use a pipe to read whats written to our returned writer
+	pr, pw := io.Pipe()
+
+	go func(w io.Writer, pr *io.PipeReader) {
+		for { // until an error occurs
+			// read the clear message from our pipe
+			msg := make([]byte, 1024)
+			n, err := pr.Read(msg)
+			if err != nil {
+				log.Println("pr.Read(msg) failed", err)
 				if err2 := pr.CloseWithError(err); err2 != nil {
 					log.Println("CloseWithError failed", err2)
 				}
 				return
 			}
 
-			if n < len(outBuf) {
-				log.Println("write fell short")
-				if err2 := pw.CloseWithError(errors.New("short write")); err2 != nil {
-					log.Println("CloseWithError failed", err2)
-				}
-				return
-			}
-		}
-	}()
-	return pr
-}
-
-// NewSecureWriter instantiates a new SecureWriter
-func NewSecureWriter(w io.Writer, priv, pub *[32]byte) io.Writer {
-	pr, pw := io.Pipe()
-	go func() {
-		for {
-			msg := make([]byte, 1024)
-			n, err := pr.Read(msg)
-			if err != nil {
-				log.Println("pr.Read(msg) failed", err)
-				if err2 := pw.CloseWithError(err); err2 != nil {
-					log.Println("CloseWithError failed", err2)
-				}
-				return
-			}
+			// cut of the unused bytes
 			msg = msg[:n]
+
+			// TODO: debug print
 			log.Println("SecW Write:", n)
 			fmt.Print(hex.Dump(msg))
 
-			var nonceBytes [24]byte
-			n, err = rand.Read(nonceBytes[:])
+			// read 24 bytes of random for our nonce
+			var nonce [24]byte
+			n, err = rand.Read(nonce[:])
 			if err != nil {
 				log.Println("rand.Read(nonce) failed", err)
-				if err2 := pw.CloseWithError(err); err2 != nil {
+				if err2 := pr.CloseWithError(err); err2 != nil {
 					log.Println("CloseWithError failed", err2)
 				}
 				return
 			}
+
+			// make sure we got a full nonce
 			if n < 24 {
 				log.Println("nonce read fell short")
-				if err2 := pw.CloseWithError(errors.New("short  nonce read")); err2 != nil {
+				if err2 := pr.CloseWithError(errors.New("short  nonce read")); err2 != nil {
 					log.Println("CloseWithError failed", err2)
 				}
 				return
 			}
-			log.Println("nonce:", len(nonceBytes))
-			fmt.Print(hex.Dump(nonceBytes[:]))
 
-			buf := box.Seal(nonceBytes[:], msg, &nonceBytes, pub, priv)
+			// TODO: debug print
+			log.Println("nonce:", len(nonce))
+			fmt.Print(hex.Dump(nonce[:]))
 
+			// encrypt and sign our message with the prepended nonce
+			buf := box.Seal(nonce[:], msg, &nonce, pub, priv)
+
+			// TODO: debug print
 			log.Println("sealed:", len(buf))
 			fmt.Print(hex.Dump(buf))
 
+			// send the sealed message with our passed writer
 			n, err = w.Write(buf)
 			if err != nil {
 				log.Println("w.Write(buf) failed", err)
-				if err2 := pw.CloseWithError(err); err2 != nil {
+				if err2 := pr.CloseWithError(err); err2 != nil {
 					log.Println("CloseWithError failed", err2)
 				}
 				return
 			}
 
+			// we didn't write everything..!
 			if n < len(buf) {
-				log.Println("write fell short")
-				if err2 := pw.CloseWithError(errors.New("short write")); err2 != nil {
+				log.Println("failed writing buf to w")
+				if err2 := pr.CloseWithError(errors.New("short write")); err2 != nil {
 					log.Println("CloseWithError failed", err2)
 				}
 				return
 			}
 		}
-	}()
+	}(w, pr)
 	return pw
 }
 

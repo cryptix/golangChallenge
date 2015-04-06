@@ -19,6 +19,10 @@ import (
 func NewSecureReader(r io.Reader, priv, pub *[32]byte) io.Reader {
 	// use a pipe to write the deciphered messages to our returned reader
 	pr, pw := io.Pipe()
+
+	var shared [32]byte
+	box.Precompute(&shared, pub, priv)
+
 	go func(r io.Reader, pw *io.PipeWriter) {
 		for { // until an error occurs
 			// read next ciphered message from the passed reader
@@ -53,7 +57,7 @@ func NewSecureReader(r io.Reader, priv, pub *[32]byte) io.Reader {
 			msg = msg[24:]
 
 			// decrypt message
-			clearMsg, ok := box.Open([]byte{}, msg, &nonce, pub, priv)
+			clearMsg, ok := box.OpenAfterPrecomputation([]byte{}, msg, &nonce, &shared)
 			if !ok {
 				log.Println("Open not ok")
 				if err2 := pw.CloseWithError(errors.New("open failed")); err2 != nil {
@@ -92,6 +96,9 @@ func NewSecureWriter(w io.Writer, priv, pub *[32]byte) io.Writer {
 	// use a pipe to read whats written to our returned writer
 	pr, pw := io.Pipe()
 
+	var shared [32]byte
+	box.Precompute(&shared, pub, priv)
+
 	go func(w io.Writer, pr *io.PipeReader) {
 		for { // until an error occurs
 			// read the clear message from our pipe
@@ -126,7 +133,7 @@ func NewSecureWriter(w io.Writer, priv, pub *[32]byte) io.Writer {
 			fmt.Print(hex.Dump(nonce[:]))
 
 			// encrypt and sign our message with the prepended nonce
-			buf := box.Seal(nonce[:], msg, &nonce, pub, priv)
+			buf := box.SealAfterPrecomputation(nonce[:], msg, &nonce, &shared)
 
 			log.Println("[DBG] sealed:", len(buf))
 			fmt.Print(hex.Dump(buf))

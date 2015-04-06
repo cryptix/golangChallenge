@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -185,5 +187,40 @@ func TestSecureDial(t *testing.T) {
 	expected := "hello world\n"
 	if _, err := fmt.Fprintf(conn, expected); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func BenchmarkSecWrite_512(b *testing.B)  { benchSecWriteNbytes(b, 512) }
+func BenchmarkSecWrite_1024(b *testing.B) { benchSecWriteNbytes(b, 1024) }
+func BenchmarkSecWrite_10k(b *testing.B)  { benchSecWriteNbytes(b, 10*1024) }
+func BenchmarkSecWrite_32k(b *testing.B)  { benchSecWriteNbytes(b, 32*1024) }
+func BenchmarkSecWrite_100k(b *testing.B) { benchSecWriteNbytes(b, 100*1024) }
+
+func benchSecWriteNbytes(b *testing.B, n int64) {
+	var msg bytes.Buffer
+	_, err := io.CopyN(&msg, rand.Reader, n)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	priv, pub := &[32]byte{'p', 'r', 'i', 'v'}, &[32]byte{'p', 'u', 'b'}
+	var buf bytes.Buffer
+
+	msgBytes := msg.Len()
+	b.SetBytes(int64(msgBytes))
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		secureW := NewSecureWriter(&buf, priv, pub)
+		n, err := io.WriteString(secureW, msg.String())
+		if err != nil {
+			b.Log("wat")
+			b.Fatal(err)
+		}
+
+		if n != msgBytes {
+			b.Fatalf("didnt writer all bytes. got %d wanted %d", n, msgBytes)
+		}
 	}
 }

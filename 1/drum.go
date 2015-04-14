@@ -61,46 +61,36 @@ func decode(in io.Reader) (*Pattern, error) {
 	// how many bytes in the header after filetype header
 	in = io.LimitReader(in, int64(binary.BigEndian.Uint16(h.FileLen[6:])))
 
-	for {
+	// wrap the reader so that we only check err once at the end
+	sr := &stickyReader{r: in}
+
+	for sr.err == nil {
 		var t Track
 
 		// read trackID from first byte after header
 		var trackID uint8
-		if err := binary.Read(in, binary.BigEndian, &trackID); err != nil {
-			return nil, err
-			if err == io.EOF {
-				return &p, nil
-			}
-		}
+		binary.Read(sr, binary.BigEndian, &trackID)
 		t.ID = int(trackID)
 
 		// discard three bytes in between
 		var discard [3]byte
-		if _, err := in.Read(discard[:]); err != nil {
-			return nil, err
-		}
+		sr.Read(discard[:])
 
 		// read length of Track name
 		var nameLen int8
-		if err := binary.Read(in, binary.BigEndian, &nameLen); err != nil {
-			return nil, err
-		}
+		binary.Read(sr, binary.BigEndian, &nameLen)
 
 		// read nameLen bytes of track name
 		var nameBuf bytes.Buffer
-		if _, err := io.CopyN(&nameBuf, in, int64(nameLen)); err != nil {
-			return nil, err
-			if err == io.EOF {
-				return &p, nil
-			}
-		}
+		io.CopyN(&nameBuf, sr, int64(nameLen))
 		t.Name = nameBuf.String()
 
 		// read stepCnt bytes of steps
 		var steps [stepCnt]byte
-		stepN, err := in.Read(steps[:])
+		stepN, err := sr.Read(steps[:])
+		// one explicit check because we will append an empty track otherwise
 		if err != nil {
-			return nil, err
+			break
 		}
 		if stepN < stepCnt {
 			return nil, ErrShortStepRead
@@ -108,6 +98,25 @@ func decode(in io.Reader) (*Pattern, error) {
 		t.Steps = Steps(steps)
 
 		p.Tracks = append(p.Tracks, t)
+
 	}
-	return &p, nil
+
+	return &p, sr.err
+}
+
+type stickyReader struct {
+	r   io.Reader
+	err error
+}
+
+func (sr *stickyReader) Read(p []byte) (int, error) {
+	if sr.err != nil {
+		return -1, sr.err
+	}
+	n, err := sr.r.Read(p)
+	if err != nil {
+		sr.err = err
+		return n, err
+	}
+	return n, nil
 }

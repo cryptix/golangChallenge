@@ -2,6 +2,7 @@ package drum
 
 import (
 	"fmt"
+	"io"
 	"os"
 )
 
@@ -15,7 +16,7 @@ func DecodeFile(path string) (*Pattern, error) {
 	}
 
 	var p *Pattern
-	if p, err = decode(f); err != nil {
+	if p, err = decode(f); err != nil && err != io.EOF {
 		return nil, err
 	}
 

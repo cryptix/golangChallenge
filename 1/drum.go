@@ -59,19 +59,19 @@ func decode(in io.Reader) (*Pattern, error) {
 	p.Tempo = h.Tempo
 
 	// how many bytes in the header after filetype header
-	n := int(binary.BigEndian.Uint16(h.FileLen[6:]))
-	n -= 50 // sizeof(header)
+	in = io.LimitReader(in, int64(binary.BigEndian.Uint16(h.FileLen[6:])))
 
-	// iterate until all bytes are consumed
-	for n > 0 {
+	for {
 		var t Track
 
 		// read trackID from first byte after header
 		var trackID uint8
 		if err := binary.Read(in, binary.BigEndian, &trackID); err != nil {
 			return nil, err
+			if err == io.EOF {
+				return &p, nil
+			}
 		}
-		n--
 		t.ID = int(trackID)
 
 		// discard three bytes in between
@@ -79,21 +79,21 @@ func decode(in io.Reader) (*Pattern, error) {
 		if _, err := in.Read(discard[:]); err != nil {
 			return nil, err
 		}
-		n -= 3
 
 		// read length of Track name
 		var nameLen int8
 		if err := binary.Read(in, binary.BigEndian, &nameLen); err != nil {
 			return nil, err
 		}
-		n--
 
 		// read nameLen bytes of track name
 		var nameBuf bytes.Buffer
 		if _, err := io.CopyN(&nameBuf, in, int64(nameLen)); err != nil {
 			return nil, err
+			if err == io.EOF {
+				return &p, nil
+			}
 		}
-		n -= int(nameLen)
 		t.Name = nameBuf.String()
 
 		// read stepCnt bytes of steps
@@ -105,7 +105,6 @@ func decode(in io.Reader) (*Pattern, error) {
 		if stepN < stepCnt {
 			return nil, ErrShortStepRead
 		}
-		n -= stepCnt
 		t.Steps = Steps(steps)
 
 		p.Tracks = append(p.Tracks, t)

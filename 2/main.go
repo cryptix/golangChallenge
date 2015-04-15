@@ -20,9 +20,11 @@ func NewSecureReader(r io.Reader, priv, pub *[32]byte) io.Reader {
 	// use a pipe to write the deciphered messages to our returned reader
 	pr, pw := io.Pipe()
 
+	// only compute the shared nacl key once
 	var shared [32]byte
 	box.Precompute(&shared, pub, priv)
 
+	// let the decryption process run on it's own goroutine - we can't block the returned reader
 	go secReadLoop(r, pw, &shared)
 	return pr
 }
@@ -78,9 +80,11 @@ func NewSecureWriter(w io.Writer, priv, pub *[32]byte) io.Writer {
 	// use a pipe to read whats written to our returned writer
 	pr, pw := io.Pipe()
 
+	// only compute the shared nacl key once
 	var shared [32]byte
 	box.Precompute(&shared, pub, priv)
 
+	// let the encryption process run on it's own goroutine - we can't block the returned writer
 	go secWriteLoop(w, pr, &shared)
 
 	return pw
@@ -145,6 +149,8 @@ func Dial(addr string) (io.ReadWriteCloser, error) {
 		return nil, err
 	}
 
+	log.Printf("Received public key: %x", theirPub)
+
 	// generate us a new key
 	myPub, myPriv, err := box.GenerateKey(rand.Reader)
 	if err != nil {
@@ -157,11 +163,8 @@ func Dial(addr string) (io.ReadWriteCloser, error) {
 		return nil, err
 	}
 
-	// their public key is used to verify the signature of what we receive
+	// create our secure pipes
 	secR := NewSecureReader(conn, myPriv, &theirPub)
-
-	// our private key is used to sign our messages
-	// their public key is used to encrypt the messages that we send
 	secW := NewSecureWriter(conn, myPriv, &theirPub)
 
 	return struct {
@@ -213,7 +216,6 @@ func Serve(l net.Listener) error {
 
 		}(conn)
 	}
-	panic("unreached")
 }
 
 func main() {

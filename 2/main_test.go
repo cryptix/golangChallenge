@@ -206,12 +206,12 @@ func benchSecWriteNbytes(b *testing.B, n int64) {
 
 	for i := 0; i < b.N; i++ {
 		secureW := NewSecureWriter(ioutil.Discard, priv, pub)
-		n, err := secureW.Write(msg)
+		nWrote, err := secureW.Write(msg)
 		if err != nil {
 			b.Fatal(err)
 		}
 
-		if n != msgLen {
+		if nWrote != msgLen {
 			b.Fatalf("didnt writer all bytes. got %d wanted %d", n, msgLen)
 		}
 	}

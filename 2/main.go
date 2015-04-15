@@ -30,22 +30,26 @@ func NewSecureReader(r io.Reader, priv, pub *[32]byte) io.Reader {
 }
 
 func secReadLoop(r io.Reader, pw *io.PipeWriter, shared *[32]byte) {
-	for { // until an error occurs
+	var failed bool
+	var check = func(err error) {
+		if err != nil {
+			log.Println("secReadLoop err:", err)
+			if err2 := pw.CloseWithError(err); err2 != nil {
+				log.Println("CloseWithError failed", err2)
+			}
+			failed = true
+		}
+	}
+	for !failed { // until an error occurs
 		// read next ciphered message from the passed reader
 		msg := make([]byte, 32*1024)
 		n, err := io.ReadAtLeast(r, msg, 25)
-		if err != nil {
-			// the closed conn check could be nicer but there is no way to access the abstracted TCPConn cleanly with the pipes involved
-			if err == io.EOF || strings.Contains(err.Error(), "use of closed network connection") {
-				if err = pw.Close(); err != nil {
-					log.Println("close pipe writer failed:", err)
-				}
-				return
-			}
-			log.Println("secReader read(msg) failed", err)
-			callWithErr(pw.CloseWithError, err)
+		// the closed conn check could be nicer but there is no way to access the abstracted TCPConn cleanly with the pipes involved
+		if err != nil && (err == io.EOF || strings.Contains(err.Error(), "use of closed network connection")) {
+			checkFatal(pw.Close())
 			return
 		}
+		check(err)
 
 		// slice of the unused rest of the buffer
 		msg = msg[:n]
@@ -60,18 +64,12 @@ func secReadLoop(r io.Reader, pw *io.PipeWriter, shared *[32]byte) {
 		// decrypt message
 		clearMsg, ok := box.OpenAfterPrecomputation([]byte{}, msg, &nonce, shared)
 		if !ok {
-			log.Println("Open not ok")
-			callWithErr(pw.CloseWithError, errors.New("open failed"))
-			return
+			check(errors.New("open failed"))
 		}
 
 		// copy the decrypted message to our pipe
 		_, err = io.Copy(pw, bytes.NewReader(clearMsg))
-		if err != nil {
-			log.Println("io.Write(w, clearMsg) failed", err)
-			callWithErr(pw.CloseWithError, err)
-			return
-		}
+		check(err)
 	}
 }
 
@@ -91,15 +89,21 @@ func NewSecureWriter(w io.Writer, priv, pub *[32]byte) io.Writer {
 }
 
 func secWriteLoop(w io.Writer, pr *io.PipeReader, shared *[32]byte) {
-	for { // until an error occurs
+	var failed bool
+	var check = func(err error) {
+		if err != nil {
+			log.Println("secWriteLoop err:", err)
+			if err2 := pr.CloseWithError(err); err2 != nil {
+				log.Println("CloseWithError failed", err2)
+			}
+			failed = true
+		}
+	}
+	for !failed { // until an error occurs
 		// read the clear message from our pipe
 		msg := make([]byte, 1024)
 		n, err := pr.Read(msg)
-		if err != nil {
-			log.Println("pr.Read(msg) failed", err)
-			callWithErr(pr.CloseWithError, err)
-			return
-		}
+		check(err)
 
 		// cut of the unused bytes
 		msg = msg[:n]
@@ -107,28 +111,14 @@ func secWriteLoop(w io.Writer, pr *io.PipeReader, shared *[32]byte) {
 		// read 24 bytes of random for our nonce
 		var nonce [24]byte
 		_, err = io.ReadFull(rand.Reader, nonce[:])
-		if err != nil {
-			log.Println("rand.Read(nonce) failed", err)
-			callWithErr(pr.CloseWithError, err)
-			return
-		}
+		check(err)
 
 		// encrypt and sign our message with the prepended nonce
 		buf := box.SealAfterPrecomputation(nonce[:], msg, &nonce, shared)
 
 		// copy the sealed message with our passed writer
 		_, err = io.Copy(w, bytes.NewReader(buf))
-		if err != nil {
-			log.Println("w.Write(buf) failed", err)
-			callWithErr(pr.CloseWithError, err)
-			return
-		}
-	}
-}
-
-func callWithErr(fn func(error) error, err error) {
-	if err2 := fn(err); err2 != nil {
-		log.Println("CloseWithError failed", err2)
+		check(err)
 	}
 }
 

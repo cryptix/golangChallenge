@@ -34,6 +34,8 @@ func NewSecureReader(r io.Reader, priv, pub *[32]byte) io.Reader {
 // doing a nacl open decryption on the data in the process using shared as the key
 func secReadLoop(r io.Reader, pw *io.PipeWriter, shared *[32]byte) {
 	var failed bool
+	// check for an error, stops the loop and
+	// closes the pipe with err to signal the reader we failed
 	var check = func(err error) {
 		if err != nil {
 			log.Println("secReadLoop err:", err)
@@ -95,6 +97,8 @@ func NewSecureWriter(w io.Writer, priv, pub *[32]byte) io.Writer {
 // doing a nacl seal encryption on the data in the process using shared as the key
 func secWriteLoop(w io.Writer, pr *io.PipeReader, shared *[32]byte) {
 	var failed bool
+	// check for an error, stops the loop and
+	// closes the pipe with err to signal the writer we failed
 	var check = func(err error) {
 		if err != nil {
 			log.Println("secWriteLoop err:", err)

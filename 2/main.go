@@ -182,37 +182,28 @@ func Serve(l net.Listener) error {
 			return err
 		}
 		go func(c net.Conn) {
+			// take down the server in case of any error
 
 			// generate us a new key
 			myPub, myPriv, err := box.GenerateKey(rand.Reader)
-			if err != nil {
-				log.Fatal(err)
-			}
+			checkFatal(err)
 
 			// our public key is sent to the other party
 			_, err = io.Copy(c, bytes.NewReader(myPub[:]))
-			if err != nil {
-				log.Fatal(err)
-			}
+			checkFatal(err)
 
 			// get their public key
 			var theirPub [32]byte
 			_, err = io.ReadFull(c, theirPub[:])
-			if err != nil {
-				log.Fatal(err)
-			}
+			checkFatal(err)
 
-			// their public key is used to verify the signature of what we receive
+			// create our secure pipes
 			secR := NewSecureReader(c, myPriv, &theirPub)
-
-			// our private key is used to sign our messages
-			// their public key is used to encrypt the messages that we send
 			secW := NewSecureWriter(c, myPriv, &theirPub)
 
+			// echo back what we get
 			_, err = io.Copy(secW, secR)
-			if err != nil {
-				log.Fatal(err)
-			}
+			checkFatal(err)
 
 		}(conn)
 	}
@@ -229,11 +220,9 @@ func main() {
 			log.Fatal(err)
 		}
 		defer func() {
-			if err := l.Close(); err != nil {
-				log.Fatal(err)
-			}
+			checkFatal(l.Close())
 		}()
-		log.Fatal(Serve(l))
+		checkFatal(Serve(l))
 	}
 
 	// Client mode
@@ -241,16 +230,17 @@ func main() {
 		log.Fatalf("Usage: %s <port> <message>", os.Args[0])
 	}
 	conn, err := Dial("localhost:" + os.Args[1])
-	if err != nil {
-		log.Fatal(err)
-	}
-	if _, err := conn.Write([]byte(os.Args[2])); err != nil {
-		log.Fatal(err)
-	}
+	checkFatal(err)
+	_, err = conn.Write([]byte(os.Args[2]))
+	checkFatal(err)
 	buf := make([]byte, len(os.Args[2]))
 	n, err := conn.Read(buf)
+	checkFatal(err)
+	fmt.Printf("%s\n", buf[:n])
+}
+
+func checkFatal(err error) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("%s\n", buf[:n])
 }

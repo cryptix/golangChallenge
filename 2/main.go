@@ -26,9 +26,12 @@ func NewSecureReader(r io.Reader, priv, pub *[32]byte) io.Reader {
 
 	// let the decryption process run on it's own goroutine - we can't block the returned reader
 	go secReadLoop(r, pw, &shared)
+
 	return pr
 }
 
+// secReadLoop copies data from r into pw
+// doing a nacl open decryption on the data in the process using shared as the key
 func secReadLoop(r io.Reader, pw *io.PipeWriter, shared *[32]byte) {
 	var failed bool
 	var check = func(err error) {
@@ -88,6 +91,8 @@ func NewSecureWriter(w io.Writer, priv, pub *[32]byte) io.Writer {
 	return pw
 }
 
+// secWriteLoop copies data from pr into w
+// doing a nacl seal encryption on the data in the process using shared as the key
 func secWriteLoop(w io.Writer, pr *io.PipeReader, shared *[32]byte) {
 	var failed bool
 	var check = func(err error) {
@@ -206,9 +211,7 @@ func main() {
 	// Server mode
 	if *port != 0 {
 		l, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
-		if err != nil {
-			log.Fatal(err)
-		}
+		checkFatal(err)
 		defer func() {
 			checkFatal(l.Close())
 		}()
@@ -221,10 +224,13 @@ func main() {
 	}
 	conn, err := Dial("localhost:" + os.Args[1])
 	checkFatal(err)
+
 	_, err = conn.Write([]byte(os.Args[2]))
 	checkFatal(err)
+
 	buf := make([]byte, len(os.Args[2]))
 	n, err := conn.Read(buf)
+
 	checkFatal(err)
 	fmt.Printf("%s\n", buf[:n])
 }

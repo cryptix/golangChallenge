@@ -80,7 +80,18 @@ func secReadLoop(r io.Reader, pw *io.PipeWriter, shared *[32]byte) {
 
 // NewSecureWriter instantiates a new SecureWriter
 func NewSecureWriter(w io.Writer, priv, pub *[32]byte) io.Writer {
-	// use a pipe to read whats written to our returned writer
+	// use an io.Pipe to read whats written to our returned writer
+	//
+	// added benchmark to main_test.go - seems fine to me for a network application
+	// taken on an i7 with go 1.4.2
+	// PASS
+	// benchmark                 iter        time/iter   throughput   bytes alloc          allocs
+	// ---------                 ----        ---------   ----------   -----------          ------
+	// BenchmarkSecWrite_512    30000      58.79 μs/op    8.71 MB/s     1423 B/op    11 allocs/op
+	// BenchmarkSecWrite_1024   30000      59.12 μs/op   17.32 MB/s     1998 B/op    11 allocs/op
+	// BenchmarkSecWrite_10k    10000     158.53 μs/op   64.59 MB/s    13040 B/op    38 allocs/op
+	// BenchmarkSecWrite_32k    10000     371.20 μs/op   88.28 MB/s    40240 B/op   104 allocs/op
+	// BenchmarkSecWrite_100k    3000    1132.72 μs/op   90.40 MB/s   123920 B/op   308 allocs/op
 	pr, pw := io.Pipe()
 
 	// only compute the shared nacl key once
